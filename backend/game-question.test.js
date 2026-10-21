@@ -1,9 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+    createQuestionPrompt,
     generateValidatedChallenge,
     generateWithFallback,
     parseGeneratedQuestion,
+    validateGeneratedChallenge,
 } = require('./game-question');
 
 const challenge = () => ({
@@ -18,6 +20,45 @@ const challenge = () => ({
     solution: 'SELECT id FROM students WHERE id > 1',
     expectedOutput: { columns: ['id'], rows: [[2], [3], [4]] },
     explanation: 'The WHERE clause keeps IDs greater than one.',
+});
+
+const hardChallenge = () => ({
+    ...challenge(),
+    tables: [
+        {
+            name: 'employees',
+            columns: [{ name: 'employee_id', type: 'INTEGER' }, { name: 'department_id', type: 'INTEGER' }],
+            rows: [[1, 1], [2, 1], [3, 1], [4, 2], [5, 2], [6, 2], [7, 3], [8, 3]],
+        },
+        {
+            name: 'departments',
+            columns: [{ name: 'department_id', type: 'INTEGER' }, { name: 'department_name', type: 'TEXT' }],
+            rows: [[1, 'Sales'], [2, 'Support'], [3, 'Design'], [4, 'Research'], [5, 'Finance'], [6, 'Legal'], [7, 'IT']],
+        },
+    ],
+    solution: 'WITH department_counts AS (SELECT department_id, COUNT(*) AS employee_count FROM employees GROUP BY department_id) SELECT department_name, employee_count FROM departments JOIN department_counts USING (department_id)',
+    expectedOutput: { columns: ['department_name', 'employee_count'], rows: [['Sales', 3], ['Support', 3], ['Design', 2]] },
+});
+
+test('keeps hard questions advanced while limiting generated dataset size', () => {
+    const prompt = createQuestionPrompt('hard');
+    assert.match(prompt, /exactly two related tables/);
+    assert.match(prompt, /15 to 18 rows total/);
+    assert.match(prompt, /five columns or fewer/);
+
+    assert.doesNotThrow(() => validateGeneratedChallenge(hardChallenge(), 'hard'));
+
+    const oversized = hardChallenge();
+    oversized.tables[0].rows.push([9, 4], [10, 4], [11, 5], [12, 5]);
+    assert.throws(() => validateGeneratedChallenge(oversized, 'hard'), /15 to 18 rows total/);
+
+    const tooManyTables = hardChallenge();
+    tooManyTables.tables.push({
+        name: 'offices',
+        columns: [{ name: 'office_id', type: 'INTEGER' }, { name: 'department_id', type: 'INTEGER' }],
+        rows: [[1, 1], [2, 2]],
+    });
+    assert.throws(() => validateGeneratedChallenge(tooManyTables, 'hard'), /exactly two related tables/);
 });
 
 test('retries one malformed AI response with the same selected difficulty', async () => {

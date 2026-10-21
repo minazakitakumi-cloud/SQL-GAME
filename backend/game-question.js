@@ -12,9 +12,9 @@ const difficultySpecs = {
         requirements: 'Require an intermediate concept, such as an INNER/LEFT JOIN, GROUP BY with an aggregate, HAVING, multiple meaningful filters, sorting aggregated results, or a basic subquery. Do not make this just a simple SELECT with one filter. Avoid window functions and deeply nested subqueries.',
     },
     hard: {
-        tableCount: 'two to four related tables',
-        rowCount: '15 to 35 rows total across all tables',
-        requirements: 'Require advanced SQL reasoning: multiple joins, a CTE, a nested/correlated subquery, a window function (ROW_NUMBER/RANK/DENSE_RANK), complex aggregation, conditional aggregation, EXISTS/NOT EXISTS, or ranking/partitioning. The solution must visibly use an advanced construct or combine multiple joins with nontrivial aggregation/filtering. Do not label a basic SELECT-WHERE question as hard.',
+        tableCount: 'exactly two related tables',
+        rowCount: '15 to 18 rows total across all tables',
+        requirements: 'Require advanced SQL reasoning: multiple joins, a CTE, a nested/correlated subquery, a window function (ROW_NUMBER/RANK/DENSE_RANK), complex aggregation, conditional aggregation, EXISTS/NOT EXISTS, or ranking/partitioning. The solution must visibly use an advanced construct or combine multiple joins with nontrivial aggregation/filtering. Do not label a basic SELECT-WHERE question as hard. Keep each table to five columns or fewer and use concise sample values.',
     },
 };
 
@@ -111,7 +111,7 @@ function validateGeneratedChallenge(challenge, difficulty) {
     }
 
     const { tables } = challenge;
-    const tableBounds = difficulty === 'easy' ? [1, 1] : difficulty === 'normal' ? [1, 3] : [2, 4];
+    const tableBounds = difficulty === 'easy' ? [1, 1] : difficulty === 'normal' ? [1, 3] : [2, 2];
     if (tables.length < tableBounds[0] || tables.length > tableBounds[1]) {
         invalid(`it must use ${difficultySpecs[difficulty].tableCount}.`);
     }
@@ -121,7 +121,8 @@ function validateGeneratedChallenge(challenge, difficulty) {
     for (const table of tables) {
         if (!table || typeof table !== 'object' || typeof table.name !== 'string' || !identifierPattern.test(table.name) ||
             tableNames.has(table.name.toLowerCase()) ||
-            !Array.isArray(table.columns) || table.columns.length < 2 || table.columns.length > 8 ||
+            !Array.isArray(table.columns) || table.columns.length < 2 ||
+            table.columns.length > (difficulty === 'hard' ? 5 : 8) ||
             !Array.isArray(table.rows) || table.rows.length < 2) {
             invalid('one or more table definitions are malformed.');
         }
@@ -139,7 +140,7 @@ function validateGeneratedChallenge(challenge, difficulty) {
         totalRows += table.rows.length;
     }
 
-    const rowBounds = difficulty === 'easy' ? [4, 10] : difficulty === 'normal' ? [8, 20] : [15, 35];
+    const rowBounds = difficulty === 'easy' ? [4, 10] : difficulty === 'normal' ? [8, 20] : [15, 18];
     if (totalRows < rowBounds[0] || totalRows > rowBounds[1]) {
         invalid(`it must provide ${difficultySpecs[difficulty].rowCount}.`);
     }
