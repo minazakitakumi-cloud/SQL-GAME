@@ -425,7 +425,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             practiceId = state.practiceId;
             sessionStorage.setItem(sessionKey, practiceId);
             renderQuestion(state);
-            setStatus('');
+            setStatus(state.historySaveError
+                ? `Practice question generated, but dashboard history was not saved: ${state.historySaveError}`
+                : '');
         } catch (error) {
             setStatus(error.message);
         } finally {

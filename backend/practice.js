@@ -163,6 +163,7 @@ function createPracticeManager({
     generateExercise,
     evaluateAnswer,
     runQuery,
+    verifyExercise = async () => {},
     now = Date.now,
     lifetime = 24 * 60 * 60 * 1000,
     generationLimit = 10,
@@ -202,6 +203,31 @@ function createPracticeManager({
         completed: session.completed,
         result: session.completedResult || undefined,
     });
+
+    const ensureHistoryEntry = session => {
+        let historyEntry = session.history.find(item => item.questionId === session.questionId);
+        if (historyEntry) return historyEntry;
+
+        const tables = session.exercise.tables;
+        historyEntry = {
+            questionId: session.questionId,
+            difficulty: 'practice',
+            title: session.exercise.title,
+            question: session.exercise.question,
+            tableName: tables[0].name,
+            columns: tables[0].columns.map(column => ({ ...column })),
+            rows: tables[0].rows.map(row => [...row]),
+            tables: tables.map(table => ({
+                name: table.name,
+                columns: table.columns.map(column => ({ ...column })),
+                rows: table.rows.map(row => [...row]),
+            })),
+            status: 'unanswered',
+            attempts: [],
+        };
+        session.history.push(historyEntry);
+        return historyEntry;
+    };
 
     const prune = () => {
         const currentTime = now();
@@ -268,9 +294,10 @@ function createPracticeManager({
             try {
                 let exercise;
                 for (let attempt = 0; attempt < 2; attempt += 1) {
+                    const generatedExercise = await generateExercise(normalizedTopic, attempt > 0);
                     try {
-                        const generatedExercise = await generateExercise(normalizedTopic, attempt > 0);
                         exercise = validatePracticeExercise(generatedExercise);
+                        await verifyExercise(exercise);
                         break;
                     } catch (error) {
                         if (attempt === 1 || error.status !== 502) throw error;
@@ -282,6 +309,7 @@ function createPracticeManager({
                 session.completed = false;
                 session.completedResult = null;
                 session.expiresAt = now() + lifetime;
+                ensureHistoryEntry(session);
                 const timestamps = generationTimes.get(userId) || [];
                 timestamps.push(now());
                 generationTimes.set(userId, timestamps);
@@ -346,27 +374,7 @@ function createPracticeManager({
                     };
                 }
                 if (session.completed) session.completedResult.queryResult = response.queryResult;
-                let historyEntry = session.history.find(item => item.questionId === session.questionId);
-                if (!historyEntry) {
-                    const tables = session.exercise.tables;
-                    historyEntry = {
-                        questionId: session.questionId,
-                        difficulty: 'practice',
-                        title: session.exercise.title,
-                        question: session.exercise.question,
-                        tableName: tables[0].name,
-                        columns: tables[0].columns.map(column => ({ ...column })),
-                        rows: tables[0].rows.map(row => [...row]),
-                        tables: tables.map(table => ({
-                            name: table.name,
-                            columns: table.columns.map(column => ({ ...column })),
-                            rows: table.rows.map(row => [...row]),
-                        })),
-                        status: 'unanswered',
-                        attempts: [],
-                    };
-                    session.history.push(historyEntry);
-                }
+                const historyEntry = ensureHistoryEntry(session);
                 const attempt = {
                     submittedAnswer: sql,
                     status: result.correct ? 'correct' : 'incorrect',

@@ -81,6 +81,7 @@ function validateGeneratedChallenge(challenge, difficulty) {
     const invalid = message => {
         const error = new Error(`Game AI returned an invalid ${difficulty} challenge: ${message}`);
         error.status = 502;
+        error.retryableGeneration = true;
         throw error;
     };
     const isCellValue = value =>
@@ -180,21 +181,17 @@ function validateGeneratedChallenge(challenge, difficulty) {
     };
 }
 
-async function generateValidatedChallenge(difficulty, generate) {
+async function generateValidatedChallenge(difficulty, generate, verify = async () => {}) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
         const retry = attempt > 0;
         const prompt = createQuestionPrompt(difficulty, retry);
-        let generated;
         try {
-            generated = await generate(prompt);
+            const generated = await generate(prompt);
+            const challenge = validateGeneratedChallenge(generated, difficulty);
+            await verify(challenge);
+            return challenge;
         } catch (error) {
             if (!retry && error?.retryableGeneration) continue;
-            throw error;
-        }
-        try {
-            return validateGeneratedChallenge(generated, difficulty);
-        } catch (error) {
-            if (!retry) continue;
             throw error;
         }
     }

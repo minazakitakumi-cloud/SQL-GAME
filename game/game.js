@@ -445,6 +445,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             const generated = await postGameRequest('/api/game/question');
             if (generated.game) updateGameState(generated.game);
             renderChallenge(generated);
+            if (generated.historySaveError) {
+                showResult(`Question loaded, but dashboard history was not saved: ${generated.historySaveError}`, 'error');
+            }
         } catch (error) {
             questionLoadFailed = true;
             showResult(

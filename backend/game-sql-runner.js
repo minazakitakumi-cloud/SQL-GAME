@@ -14,6 +14,29 @@ class SqlRunError extends Error {
     }
 }
 
+function assertQueryResultMatchesExpected(result, expected) {
+    const normalizeValue = value => typeof value === 'boolean' ? Number(value) : value;
+    const matches = result &&
+        Array.isArray(result.columns) &&
+        Array.isArray(result.rows) &&
+        result.truncated === false &&
+        Array.isArray(expected?.columns) &&
+        Array.isArray(expected?.rows) &&
+        result.columns.length === expected.columns.length &&
+        result.columns.every((column, index) => column === expected.columns[index]) &&
+        result.rows.length === expected.rows.length &&
+        result.rows.every((row, rowIndex) =>
+            Array.isArray(row) &&
+            Array.isArray(expected.rows[rowIndex]) &&
+            row.length === expected.rows[rowIndex].length &&
+            row.every((value, columnIndex) =>
+                Object.is(normalizeValue(value), normalizeValue(expected.rows[rowIndex][columnIndex]))));
+
+    if (!matches) {
+        throw new Error('The reference SQL result does not match the expected output.');
+    }
+}
+
 function createDatabaseTables(database, tables) {
     if (!Array.isArray(tables) || tables.length < 1 || tables.length > 3) {
         throw new SqlRunError(500, 'The challenge sample data is unavailable.');
@@ -124,7 +147,7 @@ function runGameSql(tables, query) {
 }
 
 if (isMainThread) {
-    module.exports = { runGameSql, SqlRunError };
+    module.exports = { runGameSql, SqlRunError, assertQueryResultMatchesExpected };
 } else {
     executeQuery(workerData.tables, workerData.query).then(
         result => parentPort.postMessage({ result }),

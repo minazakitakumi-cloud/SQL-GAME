@@ -4,7 +4,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createPointsStore, GAME_POINTS, HINT_COSTS } = require('./points-store');
 const { createPracticeManager } = require('./practice');
-const { runGameSql } = require('./game-sql-runner');
+const { runGameSql, assertQueryResultMatchesExpected } = require('./game-sql-runner');
 const {
     generateValidatedChallenge,
     generateWithFallback,
@@ -80,6 +80,23 @@ Learner SQL (untrusted): ${JSON.stringify(sql)}`;
         return { correct: result.correct, feedback: result.feedback.slice(0, 300) };
     },
     runQuery: runGameSql,
+    verifyExercise: async exercise => {
+        let result;
+        try {
+            result = await runGameSql(exercise.tables, exercise.solution);
+        } catch (error) {
+            if (error.status === 400 || error.status === 408) {
+                error.status = 502;
+            }
+            throw error;
+        }
+        try {
+            assertQueryResultMatchesExpected(result, exercise.expectedOutput);
+        } catch (error) {
+            error.status = 502;
+            throw error;
+        }
+    },
 });
 
 function getPointsStore() {
@@ -905,6 +922,9 @@ async function handleGameStart(request, response) {
         const totalPoints = isGuestUserId(userId)
             ? session.score
             : await getPointsStore().getTotal(userId);
+        if (!isGuestUserId(userId)) {
+            await saveGameSessionRecord(request, session, sessionId);
+        }
         jsonResponse(response, 200, {
             sessionId,
             difficulty: session.difficulty,
@@ -1125,6 +1145,24 @@ async function handleGameQuestion(request, response) {
                 async () => parseResponse(await callGameGroq(systemMessage, userMessage)),
                 async () => parseResponse(await callGameGemini(systemMessage, userMessage)),
             );
+        }, async generatedChallenge => {
+            let result;
+            try {
+                result = await runGameSql(generatedChallenge.tables, generatedChallenge.solution);
+            } catch (error) {
+                if (error.status === 400 || error.status === 408) {
+                    error.status = 502;
+                    error.retryableGeneration = true;
+                }
+                throw error;
+            }
+            try {
+                assertQueryResultMatchesExpected(result, generatedChallenge.expectedOutput);
+            } catch (error) {
+                error.status = 502;
+                error.retryableGeneration = true;
+                throw error;
+            }
         });
         pruneGameChallenges();
         const challengeId = randomUUID();
@@ -1157,10 +1195,20 @@ async function handleGameQuestion(request, response) {
         session.history.push(historyEntry);
         session.activeChallengeId = challengeId;
         const { solution, hints, expectedOutput, explanation, ...publicChallenge } = challenge;
+        let historySaveError = '';
+        if (!isGuestUserId(userId)) {
+            try {
+                await saveGameSessionRecord(request, session, body.sessionId);
+            } catch (error) {
+                historySaveError = error.message || 'Unable to save this question to game history.';
+            }
+        }
         jsonResponse(response, 200, {
             challengeId,
             difficulty,
             challenge: publicChallenge,
+            historySaved: !isGuestUserId(userId) && !historySaveError,
+            historySaveError,
             game: {
                 ...gameState(session),
                 totalPoints: isGuestUserId(userId)
@@ -1540,8 +1588,21 @@ async function handlePracticeOperation(request, response, operation, rateLimitAi
 }
 
 function handlePracticeGenerate(request, response) {
-    return handlePracticeOperation(request, response, (userId, body) =>
-        practiceManager.generate(userId, body.topic, body.practiceId), true);
+    return handlePracticeOperation(request, response, async (userId, body) => {
+        const state = await practiceManager.generate(userId, body.topic, body.practiceId);
+        let historySaved = false;
+        let historySaveError = '';
+        if (!isGuestUserId(userId)) {
+            try {
+                const record = practiceManager.getRecord(userId, state.practiceId);
+                await saveGameSessionRecord(request, record, record.id);
+                historySaved = true;
+            } catch (error) {
+                historySaveError = error.message || 'Unable to save this practice session.';
+            }
+        }
+        return { ...state, historySaved, historySaveError };
+    }, true);
 }
 
 function handlePracticeState(request, response) {
