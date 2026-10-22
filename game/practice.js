@@ -13,6 +13,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         answerForm: document.getElementById('answerForm'),
         answer: document.getElementById('sqlAnswer'),
         submit: document.getElementById('submitButton'),
+        clearAnswer: document.getElementById('clearAnswerButton'),
+        run: document.getElementById('runPracticeButton'),
+        queryOutput: document.getElementById('practiceQueryOutput'),
+        queryOutputTitle: document.getElementById('practiceQueryOutputTitle'),
+        queryOutputStatus: document.getElementById('practiceQueryOutputStatus'),
+        queryOutputTable: document.getElementById('practiceQueryOutputTable'),
         hintButton: document.getElementById('nextHintButton'),
         hintPanel: document.getElementById('hintPanel'),
         hintPosition: document.getElementById('hintPosition'),
@@ -41,6 +47,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     let question = null;
     let selectedHint = -1;
     let busy = false;
+    let runInProgress = false;
+    let sessionRefreshFailed = false;
 
     document.querySelectorAll('[data-practice-exit]').forEach(link => {
         link.addEventListener('click', () => {
@@ -65,13 +73,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.status.hidden = !message;
     };
 
-    const setBusy = value => {
+    const setBusy = (value, showLoading = true) => {
         busy = value;
         elements.generate.disabled = value;
         elements.submit.disabled = value || !question || question.completed;
+        elements.clearAnswer.disabled = value || !question || question.completed;
+        elements.run.disabled = value || runInProgress || !question || question.completed;
         elements.hintButton.disabled = value || !question || question.completed || question.hintsUsed >= 5;
         elements.nextQuestion.disabled = value;
-        elements.loading.hidden = !value;
+        elements.loading.hidden = !value || !showLoading;
     };
 
     const getAccessToken = async () => {
@@ -101,12 +111,81 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) {
-            throw new Error(result.error || `Practice service returned an error (${response.status}).`);
+            const error = new Error(result.error || `Practice service returned an error (${response.status}).`);
+            error.status = response.status;
+            throw error;
         }
         return result;
     };
 
     const cellText = value => value === null ? 'NULL' : String(value);
+
+    const clearQueryOutput = () => {
+        elements.queryOutput.hidden = true;
+        elements.queryOutputStatus.textContent = '';
+        elements.queryOutputStatus.dataset.state = '';
+        elements.queryOutputTable.replaceChildren();
+    };
+
+    const showQueryOutput = (result, title = 'Submitted query result') => {
+        elements.queryOutput.hidden = false;
+        elements.queryOutputTitle.textContent = title;
+        elements.queryOutputTable.replaceChildren();
+        if (!result || typeof result !== 'object') {
+            elements.queryOutputStatus.dataset.state = 'error';
+            elements.queryOutputStatus.textContent = 'Practice service did not include the query result.';
+            return;
+        }
+        if (typeof result.error === 'string') {
+            elements.queryOutputStatus.dataset.state = 'error';
+            elements.queryOutputStatus.textContent = result.error;
+            return;
+        }
+        if (!Array.isArray(result.columns) || !Array.isArray(result.rows) ||
+            typeof result.truncated !== 'boolean') {
+            elements.queryOutputStatus.dataset.state = 'error';
+            elements.queryOutputStatus.textContent = 'Practice service returned an invalid query result.';
+            return;
+        }
+
+        elements.queryOutputStatus.dataset.state = 'success';
+        elements.queryOutputStatus.textContent = result.rows.length === 1
+            ? '1 row returned.'
+            : `${result.rows.length} rows returned.`;
+        if (result.truncated) {
+            elements.queryOutputStatus.textContent += ` Showing the first ${result.rows.length} rows.`;
+        }
+        const wrapper = document.createElement('div');
+        wrapper.className = 'practice-query-output-table-wrap';
+        wrapper.append(createResultTable(result.columns, result.rows));
+        elements.queryOutputTable.replaceChildren(wrapper);
+    };
+
+    const createResultTable = (columns, rows) => {
+        const table = document.createElement('table');
+        table.className = 'sample-table';
+        const head = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        columns.forEach(column => {
+            const cell = document.createElement('th');
+            cell.scope = 'col';
+            cell.textContent = column;
+            headerRow.append(cell);
+        });
+        head.append(headerRow);
+        const body = document.createElement('tbody');
+        rows.forEach(row => {
+            const rowElement = document.createElement('tr');
+            row.forEach(value => {
+                const cell = document.createElement('td');
+                cell.textContent = cellText(value);
+                rowElement.append(cell);
+            });
+            body.append(rowElement);
+        });
+        table.append(head, body);
+        return table;
+    };
 
     const readAnswerHistory = () => {
         try {
@@ -172,6 +251,27 @@ document.addEventListener('DOMContentLoaded', async () => {
             const feedback = document.createElement('p');
             feedback.textContent = entry.feedback;
             article.append(heading, questionText, tablesHeading, tables, answerLabel, sql, feedback);
+            if (entry.queryResult) {
+                const resultLabel = document.createElement('p');
+                resultLabel.className = 'practice-history-section-label';
+                resultLabel.textContent = 'Submitted query result';
+                article.append(resultLabel);
+                if (typeof entry.queryResult.error === 'string') {
+                    const error = document.createElement('p');
+                    error.textContent = entry.queryResult.error;
+                    article.append(error);
+                } else if (Array.isArray(entry.queryResult.columns) && Array.isArray(entry.queryResult.rows)) {
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'practice-query-output-table-wrap';
+                    wrapper.append(createResultTable(entry.queryResult.columns, entry.queryResult.rows));
+                    article.append(wrapper);
+                    if (entry.queryResult.truncated) {
+                        const truncated = document.createElement('p');
+                        truncated.textContent = `Showing the first ${entry.queryResult.rows.length} rows.`;
+                        article.append(truncated);
+                    }
+                }
+            }
             if (entry.explanation) {
                 const explanation = document.createElement('p');
                 explanation.textContent = entry.explanation;
@@ -231,6 +331,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.followingHint.textContent =
             selectedHint >= 0 && selectedHint + 1 < question.hintsUsed ? 'Next' : 'Next hint';
         elements.followingHint.disabled = busy ||
+            selectedHint < 0 ||
             (question.completed && selectedHint + 1 >= question.hintsUsed) ||
             (selectedHint + 1 >= question.hintsUsed && question.hintsUsed >= 5);
     };
@@ -292,6 +393,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         elements.focus.textContent = state.exercise.topicFocus;
         elements.question.textContent = state.exercise.question;
         elements.tables.replaceChildren(...state.exercise.tables.map(makeTableCard));
+        clearQueryOutput();
         elements.panel.hidden = false;
         elements.hintPanel.hidden = true;
         elements.feedback.hidden = true;
@@ -343,12 +445,61 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     elements.answer.addEventListener('input', () => {
         if (practiceId) sessionStorage.setItem(draftKey, elements.answer.value);
+        clearQueryOutput();
+    });
+
+    elements.clearAnswer.addEventListener('click', () => {
+        elements.answer.value = '';
+        if (practiceId) sessionStorage.removeItem(draftKey);
+        clearQueryOutput();
+        elements.answer.focus();
+    });
+
+    elements.run.addEventListener('click', async () => {
+        if (!question || busy || runInProgress || question.completed) return;
+        if (!elements.answer.value.trim()) {
+            elements.queryOutput.hidden = false;
+            elements.queryOutputStatus.dataset.state = 'error';
+            elements.queryOutputStatus.textContent = 'Write a SQL query before running it.';
+            elements.queryOutputTable.replaceChildren();
+            elements.answer.focus();
+            return;
+        }
+
+        runInProgress = true;
+        elements.answer.disabled = true;
+        elements.queryOutput.hidden = false;
+        elements.queryOutputTitle.textContent = 'Query result';
+        elements.queryOutputStatus.dataset.state = '';
+        elements.queryOutputStatus.textContent = 'Running against the practice sample data…';
+        elements.queryOutputTable.replaceChildren();
+        setBusy(true, false);
+        try {
+            const result = await post('/api/practice/run', {
+                practiceId,
+                questionId: question.questionId,
+                sql: elements.answer.value,
+            });
+            showQueryOutput(result, 'Query result');
+        } catch (error) {
+            elements.queryOutputStatus.dataset.state = 'error';
+            elements.queryOutputStatus.textContent = error.message || 'Unable to run your query. Please try again.';
+        } finally {
+            runInProgress = false;
+            elements.answer.disabled = Boolean(question?.completed);
+            setBusy(false, false);
+        }
     });
 
     elements.answerForm.addEventListener('submit', async event => {
         event.preventDefault();
         if (!question || busy) return;
         const submittedSql = elements.answer.value;
+        if (!submittedSql.trim()) {
+            setStatus('Write a SQL query before checking your answer.');
+            elements.answer.focus();
+            return;
+        }
         setStatus('');
         setBusy(true);
         try {
@@ -357,6 +508,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 questionId: question.questionId,
                 sql: submittedSql,
             });
+            showQueryOutput(result.queryResult);
             answerHistory.push({
                 topic: question.topic,
                 title: question.exercise.title,
@@ -369,10 +521,16 @@ document.addEventListener('DOMContentLoaded', async () => {
                 sql: submittedSql,
                 correct: result.correct,
                 feedback: result.feedback,
+                queryResult: result.queryResult,
                 explanation: result.explanation || '',
                 answeredAt: new Date().toISOString(),
             });
             saveAnswerHistory();
+            if (!result.historySaved && result.historySaveError) {
+                setStatus(`Answer checked, but it was not saved to dashboard history: ${result.historySaveError}`);
+            } else if (!result.historySaved) {
+                setStatus('Answer checked. Sign in to include practice sessions in dashboard history.');
+            }
             question.completed = result.completed;
             if (result.correct) {
                 question.result = result;
@@ -442,6 +600,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     elements.historyClose.addEventListener('click', () => elements.historyDialog.close());
     elements.historyDialog.addEventListener('click', event => {
         if (event.target === elements.historyDialog) elements.historyDialog.close();
+    });
+
+    const refreshPracticeSession = async () => {
+        if (!practiceId || sessionRefreshFailed || busy || runInProgress ||
+            document.visibilityState === 'hidden') return;
+        try {
+            await post('/api/practice/state', { practiceId });
+        } catch (error) {
+            if (error.status === 401 || error.status === 403 || error.status === 404) {
+                sessionRefreshFailed = true;
+                setStatus(error.message);
+            }
+        }
+    };
+
+    window.setInterval(refreshPracticeSession, 10 * 60 * 1000);
+    window.addEventListener('focus', refreshPracticeSession);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void refreshPracticeSession();
     });
 
     try {

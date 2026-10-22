@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#090a18">
     <title>SQL Quest — Practice SQL</title>
     <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Orbitron:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="game.css">
     <link rel="stylesheet" href="practice.css">
     <link rel="stylesheet" href="game-chat.css">
     <link rel="stylesheet" href="effects.css">
@@ -48,8 +49,8 @@
         <p class="chat-note" id="chatNote" role="status" aria-live="polite">Sign in to start chatting. Choose Groq or Gemini at any time.</p>
     </div>
 </aside>
-<main class="practice-shell">
-    <header class="practice-topbar">
+<main class="practice-shell game-shell">
+    <header class="practice-topbar game-topbar">
         <a class="brand" href="../dashboard/dashboard.html" data-practice-exit>SQL QUEST</a>
         <div class="game-header-actions">
             <button class="back-link" id="viewPracticeHistoryButton" type="button" aria-haspopup="dialog" aria-controls="practiceHistoryDialog">▤ View History</button>
@@ -58,17 +59,31 @@
         </div>
     </header>
 
-    <section class="practice-intro">
-        <p class="eyebrow">NO SCORE · JUST PRACTICE</p>
-        <h1>Practice SQL</h1>
-        <p>Choose any SQL topic for a custom exercise. Explore its tables, write a query, and use five free progressive hints. Practice does not change your points or game score.</p>
+    <section class="game-titlebar practice-titlebar" aria-labelledby="gameTitle">
+        <div>
+            <p class="eyebrow">SQL PRACTICE</p>
+            <h1 id="gameTitle">Query Lab</h1>
+        </div>
+        <div class="difficulty-badge practice-mode-badge">
+            <span class="difficulty-dot" aria-hidden="true"></span>
+            <span>Practice</span>
+            <span class="difficulty-caption">MODE</span>
+        </div>
     </section>
 
-    <form class="topic-form" id="topicForm">
+    <form class="topic-form question-panel" id="topicForm">
+        <div class="panel-heading">
+            <span class="panel-icon" aria-hidden="true">01</span>
+            <div>
+                <p class="eyebrow">YOUR PRACTICE</p>
+                <h2>Choose a SQL topic</h2>
+            </div>
+        </div>
+        <p class="question-copy">Explore a topic with a custom question, sample tables, and five free hints. Practice does not change your points or game score.</p>
         <label for="topicInput">What would you like to practice?</label>
         <div class="topic-controls">
             <input id="topicInput" name="topic" maxlength="120" required placeholder="For example: LEFT JOINs, GROUP BY, subqueries">
-            <button class="button button-primary" id="generateButton" type="submit">Generate exercise</button>
+            <button class="button button-submit" id="generateButton" type="submit">Generate exercise</button>
         </div>
     </form>
 
@@ -78,53 +93,97 @@
         <span>Preparing your question, tables, and sample data…</span>
     </section>
 
-    <section class="exercise" id="exercisePanel" aria-labelledby="exerciseTitle" hidden>
-        <div class="exercise-heading">
-            <div>
-                <p class="eyebrow" id="topicFocus"></p>
-                <h2 id="exerciseTitle"></h2>
-            </div>
-            <span class="practice-badge">PRACTICE</span>
-        </div>
-        <p class="question-text" id="questionText"></p>
-
-        <section class="tables-section" aria-labelledby="tablesHeading">
-            <h3 id="tablesHeading">Tables &amp; sample data</h3>
-            <div class="table-list" id="tableList"></div>
-        </section>
-
-        <form id="answerForm" class="answer-form">
-            <label for="sqlAnswer">Your SQL query</label>
-            <textarea id="sqlAnswer" spellcheck="false" maxlength="4000" rows="8" placeholder="SELECT …"></textarea>
-            <div class="answer-actions">
-                <button class="button button-primary" id="submitButton" type="submit">Check answer</button>
-                <button class="button button-secondary" id="nextHintButton" type="button">Get a hint (5 left)</button>
-            </div>
-        </form>
-
-        <section class="hint-panel" id="hintPanel" aria-label="Practice hints" hidden>
-            <div class="hint-heading">
-                <h3>Hint <span id="hintPosition"></span></h3>
-                <div class="hint-navigation">
-                    <button class="button button-small" id="previousHintButton" type="button">Previous</button>
-                    <button class="button button-small" id="followingHintButton" type="button">Next</button>
+    <section class="practice-exercise" id="exercisePanel" aria-labelledby="exerciseTitle" hidden>
+        <section class="question-panel" aria-labelledby="exerciseTitle">
+            <div class="panel-heading">
+                <span class="panel-icon" aria-hidden="true">01</span>
+                <div>
+                    <p class="eyebrow" id="topicFocus"></p>
+                    <h2 id="exerciseTitle"></h2>
                 </div>
             </div>
-            <p id="hintText"></p>
-        </section>
-
-        <section class="answer-feedback" id="answerFeedback" role="status" aria-live="polite" hidden>
-            <h3 id="feedbackTitle"></h3>
-            <p id="feedbackText"></p>
-            <p id="explanationText" class="explanation" hidden></p>
-            <div class="reference-panel" id="referencePanel" hidden>
-                <h4>Reference solution</h4>
-                <pre id="referenceSolution"></pre>
-                <h4>Expected result</h4>
-                <div id="referenceOutput" class="table-scroll"></div>
+            <p class="question-copy" id="questionText"></p>
+            <div class="question-meta">
+                <span>Write a query that answers the practice question.</span>
+                <span>Five free hints · No points or lives</span>
             </div>
         </section>
-        <button class="button button-primary next-question" id="nextQuestionButton" type="button" hidden>Next question</button>
+
+        <div class="workspace-grid">
+            <section class="schema-panel game-panel" aria-labelledby="tablesHeading">
+                <div class="panel-heading compact-heading">
+                    <span class="panel-icon" aria-hidden="true">02</span>
+                    <div>
+                        <p class="eyebrow">DATABASE MAP</p>
+                        <h2 id="tablesHeading">Schema</h2>
+                    </div>
+                </div>
+                <p class="schema-caption">Tables and sample data</p>
+                <div class="table-list" id="tableList"></div>
+                <p class="schema-tip"><span aria-hidden="true">i</span> Column names and types are shown with each table.</p>
+            </section>
+
+            <section class="editor-panel game-panel" aria-labelledby="editorTitle">
+                <div class="editor-heading">
+                    <div class="panel-heading compact-heading">
+                        <span class="panel-icon" aria-hidden="true">03</span>
+                        <div>
+                            <p class="eyebrow">QUERY CONSOLE</p>
+                            <h2 id="editorTitle">SQL Editor</h2>
+                        </div>
+                    </div>
+                    <span class="editor-language">SQL</span>
+                </div>
+                <form id="answerForm" class="answer-form">
+                    <label class="visually-hidden" for="sqlAnswer">Enter your SQL query</label>
+                    <div class="editor-frame">
+                        <span class="line-number" aria-hidden="true">1</span>
+                        <textarea id="sqlAnswer" class="sql-editor" spellcheck="false" maxlength="4000" rows="8" placeholder="SELECT …" aria-describedby="editorHelp"></textarea>
+                    </div>
+                    <p class="editor-help" id="editorHelp">Tip: press Tab to indent. Check your answer when you are ready; practice checks do not award or deduct points.</p>
+                    <div class="editor-actions practice-editor-actions">
+                        <div class="utility-actions">
+                            <button class="button button-secondary" id="clearAnswerButton" type="button">Clear</button>
+                            <button class="button button-secondary" id="runPracticeButton" type="button" disabled>Run SQL</button>
+                        </div>
+                        <button class="button button-submit" id="submitButton" type="submit">Check answer</button>
+                    </div>
+                </form>
+
+                <section class="query-output practice-query-output" id="practiceQueryOutput" aria-labelledby="practiceQueryOutputTitle" aria-live="polite" hidden>
+                    <h3 id="practiceQueryOutputTitle">Query result</h3>
+                    <p class="query-output-status" id="practiceQueryOutputStatus"></p>
+                    <div id="practiceQueryOutputTable"></div>
+                </section>
+
+                <div class="hint-tools">
+                    <div class="hint-navigation practice-hint-navigation">
+                        <button class="button button-secondary" id="previousHintButton" type="button" disabled>Previous</button>
+                        <button class="button button-secondary" id="followingHintButton" type="button" disabled>Next</button>
+                        <button class="button button-secondary" id="nextHintButton" type="button" disabled>Get a hint (5 left)</button>
+                    </div>
+                    <section class="hint-display practice-hint-display" id="hintPanel" aria-label="Practice hints" hidden>
+                        <h3>Hint <span id="hintPosition"></span></h3>
+                        <p id="hintText"></p>
+                    </section>
+                </div>
+
+                <section class="answer-feedback result-panel" id="answerFeedback" role="status" aria-live="polite" hidden>
+                    <h3 id="feedbackTitle"></h3>
+                    <p id="feedbackText"></p>
+                    <p id="explanationText" class="explanation" hidden></p>
+                    <div class="reference-panel" id="referencePanel" hidden>
+                        <h4>Reference solution</h4>
+                        <pre id="referenceSolution"></pre>
+                        <h4>Expected result</h4>
+                        <div id="referenceOutput" class="table-scroll"></div>
+                    </div>
+                </section>
+                <div class="question-actions">
+                    <button class="button button-submit" id="nextQuestionButton" type="button" hidden>Next question <span aria-hidden="true">→</span></button>
+                </div>
+            </section>
+        </div>
     </section>
 </main>
 <dialog class="practice-history-dialog" id="practiceHistoryDialog" aria-labelledby="practiceHistoryTitle">

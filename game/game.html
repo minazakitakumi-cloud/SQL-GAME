@@ -140,10 +140,11 @@
                 <span class="line-number" aria-hidden="true">1</span>
                 <textarea id="sqlEditor" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-describedby="editorHelp" placeholder="SELECT ..."></textarea>
             </div>
-            <p class="editor-help" id="editorHelp">Tip: press Tab to indent. Game AI checks your SQL against the challenge; queries are not executed.</p>
+            <p class="editor-help" id="editorHelp">Tip: press Tab to indent. Run SQL to preview results using the challenge sample data; running does not submit your answer.</p>
             <div class="editor-actions">
                 <div class="utility-actions">
                     <button class="button button-secondary" id="clearButton" type="button">Clear</button>
+                    <button class="button button-secondary" id="runButton" type="button" disabled>Run SQL</button>
                 </div>
                 <button class="button button-submit" id="submitButton" type="button"><span>Check answer</span><span aria-hidden="true">→</span></button>
             </div>
@@ -156,6 +157,11 @@
                 <p class="hint-status" id="hintStatus" role="status" aria-live="polite" hidden></p>
                 <p class="hint-display" id="hintDisplay" aria-live="polite" hidden></p>
             </div>
+            <section class="query-output" id="queryOutput" aria-labelledby="queryOutputTitle" aria-live="polite" hidden>
+                <h3 id="queryOutputTitle">Query result</h3>
+                <p class="query-output-status" id="queryOutputStatus"></p>
+                <div id="queryOutputTable"></div>
+            </section>
             <div class="question-actions">
                 <button class="button button-submit" id="nextQuestionButton" type="button" hidden>Next question <span aria-hidden="true">→</span></button>
             </div>

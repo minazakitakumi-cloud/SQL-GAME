@@ -175,7 +175,7 @@
                         <li>Choose a difficulty on the dashboard, then select <strong>Start game</strong>.</li>
                         <li>Read the task and inspect the table name, column names, data types, and sample rows.</li>
                         <li>Write a read-only SQL query in the editor and select <strong>Check answer</strong>.</li>
-                        <li>Learn from the feedback. The game checks your query with AI; it does not run it against a database.</li>
+                        <li>Use <strong>Run SQL</strong> to preview your query against the challenge sample data without submitting it. Check your answer when you are ready.</li>
                     </ol>
                     <p class="game-guide-note">Press Tab in the SQL editor to insert indentation. Use Clear if you want to rewrite your query.</p>
                 </div>
@@ -212,7 +212,7 @@
                 <span class="game-guide-number">04</span>
                 <div>
                     <h3>Review your answers</h3>
-                    <p>Select <strong>View History</strong> on the game page to review questions, their table data, your submitted SQL, and the feedback. Your completed game history is saved to your account, with a browser copy available as a backup.</p>
+                    <p>Open dashboard <strong>View History</strong> to review every scored game session and practice session, including questions, table data, submitted SQL, and feedback. Signed-in sessions are saved to your account.</p>
                 </div>
             </section>
 
@@ -221,7 +221,7 @@
                 <div>
                     <h3>Practice without scoring</h3>
                     <p>Choose <strong>Practice SQL</strong> to enter any SQL topic you want to work on. Each exercise comes with its own question, tables, sample data, and up to five free progressive hints.</p>
-                    <p>Practice answers do not award or deduct points and do not cost lives. Use View History to review submitted answers. Practice queries are checked by AI and are not executed.</p>
+                    <p>Practice answers do not award or deduct points and do not cost lives. Use <strong>Run SQL</strong> to preview a read-only query against the sample data, then check your answer when you are ready. Practice sessions appear in dashboard <strong>View History</strong> when you are signed in.</p>
                 </div>
             </section>
 
@@ -247,7 +247,7 @@
             <div>
                 <p class="leaderboard-eyebrow">PLAYER RECORDS</p>
                 <h2 id="historyTitle">Game History</h2>
-                <p class="leaderboard-description" id="historyDescription">Your completed SQL Quest games, newest first.</p>
+                <p class="leaderboard-description" id="historyDescription">Your scored games and practice sessions, newest activity first.</p>
             </div>
             <button class="leaderboard-close" id="historyClose" type="button" aria-label="Close game history">×</button>
         </header>
@@ -256,8 +256,8 @@
             <p class="history-status" id="historyStatus" role="status" aria-live="polite" hidden></p>
             <p class="history-error" id="historyError" role="alert" hidden></p>
             <p class="history-guest" id="historyGuest" hidden>Sign in to save and view your game history.</p>
-            <p class="history-empty" id="historyEmpty" hidden>No games yet. Finish a SQL Quest game and it will appear here.</p>
-            <div class="history-game-list" id="historyGames" aria-label="Completed games"></div>
+            <p class="history-empty" id="historyEmpty" hidden>No game or practice history yet. Complete an answer and it will appear here.</p>
+            <div class="history-game-list" id="historyGames" aria-label="Game and practice sessions"></div>
         </section>
 
         <section id="historyDetailScreen" aria-labelledby="historyDetailTitle" hidden>

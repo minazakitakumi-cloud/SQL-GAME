@@ -453,6 +453,51 @@ textarea {
     gap: 8px;
 }
 
+.query-output {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 255, 245, 0.18);
+    border-radius: 9px;
+    background: rgba(0, 255, 245, 0.035);
+}
+
+.query-output[hidden] {
+    display: none;
+}
+
+.query-output h3 {
+    margin: 0;
+    color: var(--game-cyan);
+    font-family: Orbitron, sans-serif;
+    font-size: 0.72rem;
+}
+
+.query-output-status {
+    margin: 8px 0;
+    color: var(--game-muted);
+    font-size: 0.66rem;
+    line-height: 1.5;
+}
+
+.query-output-status[data-state="error"] {
+    color: #ffbdc5;
+}
+
+.query-output-status[data-state="success"] {
+    color: #aaf4d5;
+}
+
+.query-output-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid rgba(0, 255, 245, 0.14);
+    border-radius: 8px;
+}
+
+.query-output-table-wrap:empty {
+    display: none;
+}
+
 .hint-progress {
     color: var(--game-muted);
     font-size: 0.62rem;

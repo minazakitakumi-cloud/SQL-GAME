@@ -10,7 +10,7 @@ class PracticeError extends Error {
     }
 }
 
-function normalizeReadOnlyQuery(query) {
+function normalizeReadOnlyQuery(query, context = 'Practice answers') {
     if (typeof query !== 'string' || !query.trim() || query.length > 4000) {
         throw new PracticeError(400, 'Enter a SQL answer up to 4,000 characters long.');
     }
@@ -98,7 +98,7 @@ function normalizeReadOnlyQuery(query) {
         semicolonCount > 1 ||
         (semicolonCount === 1 && analysis.slice(semicolonPosition + 1).trim() !== '') ||
         /\b(insert|update|delete|merge|drop|alter|create|truncate|grant|revoke|copy|call|execute)\b/i.test(codeWithoutFinalSemicolon)) {
-        throw new PracticeError(400, 'Practice answers must be a single read-only SELECT or WITH query.');
+        throw new PracticeError(400, `${context} must be a single read-only SELECT or WITH query.`);
     }
 
     let result = normalized.trim();
@@ -162,8 +162,9 @@ function validatePracticeExercise(exercise) {
 function createPracticeManager({
     generateExercise,
     evaluateAnswer,
+    runQuery,
     now = Date.now,
-    lifetime = 60 * 60 * 1000,
+    lifetime = 24 * 60 * 60 * 1000,
     generationLimit = 10,
     generationWindow = 60 * 1000,
 }) {
@@ -244,6 +245,7 @@ function createPracticeManager({
                     hintsUsed: 0,
                     completed: false,
                     generating: false,
+                    history: [],
                 };
                 sessions.set(id, session);
             } else {
@@ -264,7 +266,16 @@ function createPracticeManager({
 
             session.generating = true;
             try {
-                const exercise = validatePracticeExercise(await generateExercise(normalizedTopic));
+                let exercise;
+                for (let attempt = 0; attempt < 2; attempt += 1) {
+                    try {
+                        const generatedExercise = await generateExercise(normalizedTopic, attempt > 0);
+                        exercise = validatePracticeExercise(generatedExercise);
+                        break;
+                    } catch (error) {
+                        if (attempt === 1 || error.status !== 502) throw error;
+                    }
+                }
                 session.questionId = randomUUID();
                 session.exercise = exercise;
                 session.hintsUsed = 0;
@@ -303,6 +314,9 @@ function createPracticeManager({
             if (session.checking) {
                 throw new PracticeError(409, 'This answer is already being checked.');
             }
+            if (session.running) {
+                throw new PracticeError(409, 'Wait until your query has finished running before checking your answer.');
+            }
 
             session.checking = true;
             try {
@@ -324,9 +338,81 @@ function createPracticeManager({
                     response.expectedOutput = session.exercise.expectedOutput;
                     session.completedResult = response;
                 }
+                try {
+                    response.queryResult = await runQuery(session.exercise.tables, sql);
+                } catch (error) {
+                    response.queryResult = {
+                        error: error.message || 'Unable to run your submitted query.',
+                    };
+                }
+                if (session.completed) session.completedResult.queryResult = response.queryResult;
+                let historyEntry = session.history.find(item => item.questionId === session.questionId);
+                if (!historyEntry) {
+                    const tables = session.exercise.tables;
+                    historyEntry = {
+                        questionId: session.questionId,
+                        difficulty: 'practice',
+                        title: session.exercise.title,
+                        question: session.exercise.question,
+                        tableName: tables[0].name,
+                        columns: tables[0].columns.map(column => ({ ...column })),
+                        rows: tables[0].rows.map(row => [...row]),
+                        tables: tables.map(table => ({
+                            name: table.name,
+                            columns: table.columns.map(column => ({ ...column })),
+                            rows: table.rows.map(row => [...row]),
+                        })),
+                        status: 'unanswered',
+                        attempts: [],
+                    };
+                    session.history.push(historyEntry);
+                }
+                const attempt = {
+                    submittedAnswer: sql,
+                    status: result.correct ? 'correct' : 'incorrect',
+                    feedback: result.feedback,
+                    queryResult: response.queryResult,
+                };
+                if (!result.correct) attempt.correctAnswer = session.exercise.solution;
+                historyEntry.attempts.push(attempt);
+                historyEntry.status = attempt.status;
+                if (!result.correct) historyEntry.correctAnswer = session.exercise.solution;
+                session.lastAnsweredAt = new Date(now()).toISOString();
                 return response;
             } finally {
                 session.checking = false;
+            }
+        },
+
+        getRecord(userId, practiceId) {
+            const session = getSession(practiceId, userId);
+            return {
+                id: session.id,
+                userId: session.userId,
+                difficulty: 'practice',
+                score: 0,
+                history: session.history,
+                finishedAt: session.lastAnsweredAt,
+            };
+        },
+
+        async run(userId, practiceId, questionId, sql) {
+            const session = getSession(practiceId, userId);
+            if (typeof questionId !== 'string' || questionId !== session.questionId) {
+                throw new PracticeError(403, 'This query does not belong to the current practice question.');
+            }
+            if (session.completed) {
+                throw new PracticeError(409, 'This practice question is complete. Generate another one.');
+            }
+            if (session.checking || session.generating || session.running) {
+                throw new PracticeError(409, 'Wait for the current practice request to finish before running a query.');
+            }
+
+            session.running = true;
+            try {
+                return await runQuery(session.exercise.tables, sql);
+            } finally {
+                session.running = false;
             }
         },
 
@@ -343,6 +429,9 @@ function createPracticeManager({
             }
             if (session.checking || session.generating) {
                 throw new PracticeError(409, 'Wait for the current practice request to finish.');
+            }
+            if (session.running) {
+                throw new PracticeError(409, 'Wait until your query has finished running before using a hint.');
             }
             if (hintIndex > session.hintsUsed) {
                 throw new PracticeError(409, 'Unlock practice hints in order.');

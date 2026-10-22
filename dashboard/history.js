@@ -15,7 +15,7 @@
     const detailStatus = document.getElementById('historyDetailStatus');
     const detailError = document.getElementById('historyDetailError');
     const detailList = document.getElementById('historyDetailList');
-    const difficultyNames = { easy: 'Easy', normal: 'Medium', hard: 'Hard' };
+    const difficultyNames = { easy: 'Easy', normal: 'Medium', hard: 'Hard', practice: 'Practice' };
     let dialogOpener = null;
     let selectedGameButton = null;
 
@@ -73,7 +73,9 @@
             difficulty.textContent = difficultyNames[game.difficulty] || 'SQL Quest';
             const score = document.createElement('strong');
             score.className = 'history-game-score';
-            score.textContent = `${Number(game.final_score) || 0} points`;
+            score.textContent = game.difficulty === 'practice'
+                ? 'Practice mode'
+                : `${Number(game.final_score) || 0} points`;
             const finished = document.createElement('time');
             finished.className = 'history-game-finished';
             finished.dateTime = typeof game.finished_at === 'string' ? game.finished_at : '';
@@ -82,7 +84,7 @@
             action.className = 'history-game-action';
             action.setAttribute('aria-hidden', 'true');
             action.textContent = 'View →';
-            button.setAttribute('aria-label', `${difficulty.textContent}, ${score.textContent}, finished ${finished.textContent}. View details.`);
+            button.setAttribute('aria-label', `${difficulty.textContent}, ${score.textContent}, activity ${finished.textContent}. View details.`);
             button.append(difficulty, score, finished, action);
             button.addEventListener('click', () => openGame(game, button));
             gamesContainer.append(button);
@@ -119,8 +121,12 @@
         selectedGameButton = opener;
         listScreen.hidden = true;
         detailScreen.hidden = false;
-        detailTitle.textContent = `${difficultyNames[game.difficulty] || 'SQL Quest'} game`;
-        detailSummary.textContent = `${Number(game.final_score) || 0} points · Finished ${formatFinishedAt(game.finished_at)}`;
+        detailTitle.textContent = game.difficulty === 'practice'
+            ? 'Practice session'
+            : `${difficultyNames[game.difficulty] || 'SQL Quest'} game`;
+        detailSummary.textContent = game.difficulty === 'practice'
+            ? `Practice mode · Activity ${formatFinishedAt(game.finished_at)}`
+            : `${Number(game.final_score) || 0} points · Activity ${formatFinishedAt(game.finished_at)}`;
         detailStatus.textContent = 'Loading questions and attempts…';
         detailStatus.hidden = false;
         detailError.hidden = true;
@@ -142,7 +148,9 @@
             }
             if (!Array.isArray(result.history)) throw new Error('This game history is incomplete.');
             GameHistoryRenderer.render(detailList, result.history, createTable);
-            detailSummary.textContent += ` · ${result.history.length} questions`;
+            detailSummary.textContent += game.difficulty === 'practice'
+                ? ` · ${result.history.length} practice questions`
+                : ` · ${result.history.length} questions`;
             detailStatus.hidden = true;
         } catch (loadError) {
             detailStatus.hidden = true;

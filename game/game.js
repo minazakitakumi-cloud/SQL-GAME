@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const hintCountLabel = document.getElementById('hintCount');
     const hintButton = document.getElementById('hintButton');
     const hintPreviousButton = document.getElementById('hintPreviousButton');
+    const runButton = document.getElementById('runButton');
     const hintProgress = document.getElementById('hintProgress');
     const hintStatus = document.getElementById('hintStatus');
     const hintDisplay = document.getElementById('hintDisplay');
@@ -16,6 +17,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const submitButton = document.getElementById('submitButton');
     const nextQuestionButton = document.getElementById('nextQuestionButton');
     const resultPanel = document.getElementById('resultPanel');
+    const queryOutput = document.getElementById('queryOutput');
+    const queryOutputTitle = document.getElementById('queryOutputTitle');
+    const queryOutputStatus = document.getElementById('queryOutputStatus');
+    const queryOutputTable = document.getElementById('queryOutputTable');
     const questionLoadingStatus = document.getElementById('questionLoadingStatus');
     const scoreValue = document.getElementById('gameScore');
     const totalPointsValue = document.getElementById('totalPoints');
@@ -59,6 +64,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     let questionComplete = false;
     let gameOver = false;
     let requestInProgress = false;
+    let runInProgress = false;
+    let sessionRefreshInProgress = false;
+    let sessionRefreshFailed = false;
     let questionLoadFailed = false;
     let sessionHistory = [];
     let currentHistoryEntry = null;
@@ -116,6 +124,47 @@ document.addEventListener('DOMContentLoaded', async () => {
         resultPanel.hidden = false;
     };
 
+    const clearQueryOutput = () => {
+        queryOutput.hidden = true;
+        queryOutputStatus.textContent = '';
+        queryOutputStatus.dataset.state = '';
+        queryOutputTable.replaceChildren();
+    };
+
+    const showQueryOutput = (result, title = 'Submitted query result') => {
+        queryOutput.hidden = false;
+        queryOutputTitle.textContent = title;
+        queryOutputTable.replaceChildren();
+        if (!result || typeof result !== 'object') {
+            queryOutputStatus.dataset.state = 'error';
+            queryOutputStatus.textContent = 'The query result was not included in the answer check.';
+            return;
+        }
+        if (typeof result.error === 'string') {
+            queryOutputStatus.dataset.state = 'error';
+            queryOutputStatus.textContent = result.error;
+            return;
+        }
+        if (!Array.isArray(result.columns) || !Array.isArray(result.rows) ||
+            typeof result.truncated !== 'boolean') {
+            queryOutputStatus.dataset.state = 'error';
+            queryOutputStatus.textContent = 'The game service returned an invalid query result.';
+            return;
+        }
+
+        queryOutputStatus.dataset.state = 'success';
+        queryOutputStatus.textContent = result.rows.length === 1
+            ? '1 row returned.'
+            : `${result.rows.length} rows returned.`;
+        if (result.truncated) {
+            queryOutputStatus.textContent += ` Showing the first ${result.rows.length} rows.`;
+        }
+        const wrapper = document.createElement('div');
+        wrapper.className = 'query-output-table-wrap';
+        wrapper.append(createTable(result.columns, result.rows, 'schema-table'));
+        queryOutputTable.replaceChildren(wrapper);
+    };
+
     const getAccessToken = async () => {
         const { data, error } = await AppAuth.getSession();
         if (error) throw error;
@@ -146,7 +195,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (typeof result.score === 'number' && typeof result.lives === 'number') {
                 updateGameState(result);
             }
-            throw new Error(result.error || `The game service returned an error (${response.status}).`);
+            const error = new Error(result.error || `The game service returned an error (${response.status}).`);
+            error.status = response.status;
+            throw error;
         }
         return result;
     };
@@ -186,8 +237,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         const canUnlockHint = hintsUnlocked < hintCosts.length &&
             totalPoints >= hintCosts[hintsUnlocked] &&
             !questionComplete && !gameOver;
-        hintPreviousButton.disabled = requestInProgress || currentHintIndex <= 0;
-        hintButton.disabled = requestInProgress || (!canBrowseForward && !canUnlockHint);
+        hintPreviousButton.disabled = requestInProgress || runInProgress || currentHintIndex <= 0;
+        hintButton.disabled = requestInProgress || runInProgress || (!canBrowseForward && !canUnlockHint);
         hintProgress.textContent = `Hints: ${hintsUnlocked}/3`;
         hintCountLabel.textContent = `Hints: ${hintsUnlocked}`;
 
@@ -206,10 +257,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
 
     const setQuestionControls = () => {
-        const disabled = requestInProgress || gameOver || questionComplete || !challenge;
+        const disabled = requestInProgress || runInProgress || gameOver || questionComplete || !challenge;
         editor.disabled = disabled;
         clearButton.disabled = disabled;
         submitButton.disabled = disabled;
+        runButton.disabled = disabled;
+        runButton.textContent = runInProgress ? 'Running…' : 'Run SQL';
         nextQuestionButton.hidden = (!questionComplete && !questionLoadFailed) || gameOver;
         nextQuestionButton.disabled = requestInProgress || gameOver;
         nextQuestionButton.firstChild.textContent = requestInProgress
@@ -260,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             return section;
         }));
         editor.value = '';
+        clearQueryOutput();
         hintDisplay.hidden = hintsUnlocked === 0;
         hintDisplay.textContent = hintsUnlocked > 0 ? unlockedHints[0] : '';
         hintStatus.textContent = '';
@@ -311,9 +365,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (gameOver) {
             finishGameOver();
         } else if (questionComplete) {
+            const previousAttempt = currentHistoryEntry?.attempts?.at(-1);
+            const status = currentHistoryEntry?.status === 'incorrect' ? 'error' : 'success';
             showResult(
-                'This question was already answered. Loading the next question…',
-                currentHistoryEntry?.status === 'incorrect' ? 'error' : 'success',
+                previousAttempt?.feedback
+                    ? `${previousAttempt.feedback} Select Next question when you are ready.`
+                    : 'This question was already answered. Select Next question when you are ready.',
+                status,
             );
         } else {
             editor.focus();
@@ -331,6 +389,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         gameOverScore.textContent = `Final score: ${game?.score ?? 0} points`;
         gameOverSaveStatus.textContent = historyStorageError || historySaveMessage;
         gameOverSaveStatus.hidden = false;
+        if (!queryOutput.hidden) gameOverHome.insertBefore(queryOutput, gameOverSaveStatus);
         gameOverHome.hidden = false;
         gameHistoryView.hidden = true;
         gameOverScreen.hidden = false;
@@ -413,7 +472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     hintButton.addEventListener('click', async () => {
-        if (requestInProgress) return;
+        if (requestInProgress || runInProgress) return;
         if (currentHintIndex >= 0 && currentHintIndex < hintsUnlocked - 1) {
             showUnlockedHint(currentHintIndex + 1);
             return;
@@ -446,14 +505,52 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
+    runButton.addEventListener('click', async () => {
+        if (requestInProgress || runInProgress || questionComplete || gameOver) return;
+        if (!editor.value.trim()) {
+            queryOutput.hidden = false;
+            queryOutputStatus.dataset.state = 'error';
+            queryOutputStatus.textContent = 'Write a SQL query before running it.';
+            queryOutputTable.replaceChildren();
+            editor.focus();
+            return;
+        }
+        if (!challenge) return;
+
+        runInProgress = true;
+        queryOutput.hidden = false;
+        queryOutputTitle.textContent = 'Query result';
+        queryOutputStatus.dataset.state = '';
+        queryOutputStatus.textContent = 'Running against the challenge sample data…';
+        queryOutputTable.replaceChildren();
+        setQuestionControls();
+
+        try {
+            const result = await postGameRequest('/api/game/run', {
+                challengeId: challenge.challengeId,
+                sql: editor.value,
+            });
+            showQueryOutput(result, 'Query result');
+        } catch (error) {
+            queryOutputStatus.dataset.state = 'error';
+            queryOutputStatus.textContent = error.message || 'Unable to run your query. Please try again.';
+        } finally {
+            runInProgress = false;
+            setQuestionControls();
+        }
+    });
+
     clearButton.addEventListener('click', () => {
         editor.value = '';
         resultPanel.hidden = true;
+        clearQueryOutput();
         editor.focus();
     });
 
+    editor.addEventListener('input', clearQueryOutput);
+
     submitButton.addEventListener('click', async () => {
-        if (requestInProgress || questionComplete || gameOver) return;
+        if (requestInProgress || runInProgress || questionComplete || gameOver) return;
         if (!editor.value.trim()) {
             showResult('Write a SQL query before checking your answer.', 'error');
             editor.focus();
@@ -475,6 +572,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 challengeId: challenge.challengeId,
                 sql: submittedAnswer,
             });
+            showQueryOutput(result.queryResult);
             updateGameState(result);
             historySaveMessage = result.historySaved
                 ? 'Game history saved to your account.'
@@ -487,6 +585,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     submittedAnswer,
                     status: result.correct ? 'correct' : 'incorrect',
                     feedback: result.feedback,
+                    queryResult: result.queryResult,
                 };
                 if (!result.correct && typeof result.correctAnswer === 'string') {
                     attempt.correctAnswer = result.correctAnswer;
@@ -506,7 +605,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const outcome = result.correct
                     ? `${result.feedback} (+${result.pointsAwarded} points)`
                     : `${result.feedback} One life lost.`;
-                showResult(outcome, result.correct ? 'success' : 'error');
+                const saveWarning = result.historySaveError
+                    ? ` Dashboard history was not saved: ${result.historySaveError}`
+                    : '';
+                showResult(`${outcome}${saveWarning}`, result.correct ? 'success' : 'error');
             }
         } catch (error) {
             showResult(error.message || 'Unable to check your answer. Please try again.', 'error');
@@ -515,7 +617,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             submitButton.querySelector('span').textContent = 'Check answer';
             setQuestionControls();
         }
-        if (questionComplete && !gameOver) await loadQuestion();
     });
 
     nextQuestionButton.addEventListener('click', loadQuestion);
@@ -598,10 +699,6 @@ document.addEventListener('DOMContentLoaded', async () => {
                 finishGameOver();
             } else if (state.activeChallenge) {
                 renderChallenge(state.activeChallenge);
-                if (state.activeChallenge.completed) {
-                    requestInProgress = false;
-                    await loadQuestion();
-                }
             } else {
                 requestInProgress = false;
                 await loadQuestion();
@@ -632,6 +729,27 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     };
 
+    const refreshGameSession = async () => {
+        if (!sessionId || gameOver || sessionRefreshFailed || requestInProgress || runInProgress || sessionRefreshInProgress ||
+            document.visibilityState === 'hidden') return;
+        sessionRefreshInProgress = true;
+        try {
+            await postGameRequest('/api/game/state');
+        } catch (error) {
+            if (error.status === 401 || error.status === 403 || error.status === 404) {
+                sessionRefreshFailed = true;
+                showResult(error.message, 'error');
+            }
+        } finally {
+            sessionRefreshInProgress = false;
+        }
+    };
+
     setQuestionControls();
     await initializeGame();
+    window.setInterval(refreshGameSession, 10 * 60 * 1000);
+    window.addEventListener('focus', refreshGameSession);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') void refreshGameSession();
+    });
 });

@@ -205,3 +205,311 @@ button, input, textarea { font: inherit; }
         text-align: center;
     }
 }
+
+.practice-shell {
+    width: min(1240px, 100%);
+    padding-bottom: 22px;
+}
+
+.practice-titlebar {
+    padding-bottom: 23px;
+}
+
+.practice-mode-badge {
+    border-color: rgba(185, 103, 255, .3);
+    background: rgba(185, 103, 255, .055);
+}
+
+.practice-mode-badge .difficulty-dot {
+    background: var(--game-purple);
+    box-shadow: 0 0 10px rgba(185, 103, 255, .55);
+}
+
+.practice-shell .topic-form {
+    margin: 0;
+    padding: clamp(17px, 3vw, 24px);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .16);
+}
+
+.topic-form .question-copy {
+    margin-bottom: 14px;
+}
+
+.topic-form > label {
+    margin: 0 0 8px;
+    color: var(--game-muted);
+    font-size: .68rem;
+    font-weight: 400;
+}
+
+.topic-controls {
+    align-items: center;
+}
+
+.topic-controls input {
+    min-width: 0;
+    min-height: 40px;
+    border-color: rgba(0, 255, 245, .16);
+    background: rgba(4, 7, 18, .8);
+    font-family: 'Fira Code', monospace;
+    font-size: .76rem;
+}
+
+.topic-controls input:focus {
+    outline: 2px solid var(--game-cyan);
+    outline-offset: 2px;
+}
+
+.practice-status {
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 112, 112, .28);
+    border-radius: 9px;
+    background: rgba(180, 45, 65, .1);
+}
+
+.practice-exercise {
+    margin-top: 17px;
+}
+
+.practice-exercise[hidden] {
+    display: none;
+}
+
+.practice-exercise > .question-panel {
+    padding: clamp(17px, 3vw, 24px);
+}
+
+.practice-exercise .workspace-grid {
+    margin-top: 17px;
+}
+
+.practice-exercise .table-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+}
+
+.practice-exercise .table-card {
+    border-color: rgba(0, 255, 245, .14);
+}
+
+.practice-exercise .table-title {
+    padding: 9px 10px;
+    font-size: .68rem;
+}
+
+.practice-exercise .schema {
+    margin: 0;
+    padding: 8px 10px;
+    font-size: .62rem;
+}
+
+.practice-exercise .sample-table {
+    font-size: .66rem;
+}
+
+.practice-exercise .sample-table th,
+.practice-exercise .sample-table td {
+    padding: 8px 9px;
+    border-top: 0;
+    border-bottom: 1px solid rgba(180, 186, 203, .1);
+}
+
+.practice-exercise .sample-table th {
+    background: rgba(0, 255, 245, .07);
+    color: var(--game-cyan);
+    font-weight: 500;
+}
+
+.practice-exercise .sample-table tbody tr:last-child td {
+    border-bottom: 0;
+}
+
+.practice-exercise .sample-table tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, .02);
+}
+
+.answer-form {
+    margin: 0;
+}
+
+.answer-form label.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+.answer-form textarea.sql-editor {
+    width: 100%;
+    min-height: 190px;
+    padding: 14px;
+    border: 0;
+    border-radius: 0;
+    background: #383838;
+    color: #a8f4e8;
+    font-family: 'Fira Code', monospace;
+    font-size: .8rem;
+    line-height: 1.7;
+    tab-size: 4;
+}
+
+.answer-form textarea.sql-editor:focus {
+    border-color: transparent;
+    outline: 0;
+}
+
+.answer-form textarea.sql-editor::placeholder {
+    color: #697187;
+}
+
+.practice-editor-actions {
+    margin-top: 0;
+}
+
+.practice-editor-actions .utility-actions {
+    flex-wrap: wrap;
+}
+
+.practice-query-output {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px solid rgba(0, 255, 245, .18);
+    border-radius: 9px;
+    background: rgba(0, 255, 245, .035);
+}
+
+.practice-query-output[hidden] {
+    display: none;
+}
+
+.practice-query-output h3 {
+    margin: 0;
+    color: var(--game-cyan);
+    font-family: Orbitron, sans-serif;
+    font-size: .72rem;
+}
+
+.practice-query-output .query-output-status {
+    margin: 8px 0;
+    color: var(--game-muted);
+    font-size: .66rem;
+    line-height: 1.5;
+}
+
+.practice-query-output .query-output-status[data-state="error"] {
+    color: #ffbdc5;
+}
+
+.practice-query-output .query-output-status[data-state="success"] {
+    color: #aaf4d5;
+}
+
+.practice-query-output-table-wrap {
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid rgba(0, 255, 245, .14);
+    border-radius: 8px;
+}
+
+.practice-query-output-table-wrap .sample-table {
+    min-width: 100%;
+}
+
+.practice-hint-navigation {
+    margin-top: 12px;
+}
+
+.practice-hint-display {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(0, 255, 245, .15);
+    border-radius: 8px;
+    background: rgba(0, 255, 245, .04);
+}
+
+.practice-hint-display h3 {
+    margin: 0;
+    color: var(--game-cyan);
+    font-size: .68rem;
+}
+
+.practice-hint-display p {
+    margin: 7px 0 0;
+    color: #d5d9e7;
+    font-size: .68rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.answer-feedback {
+    margin-top: 14px;
+}
+
+.answer-feedback[data-correct="true"] {
+    border-color: rgba(117, 237, 192, .3);
+    background: rgba(37, 160, 120, .1);
+    color: #aaf4d5;
+}
+
+.answer-feedback[data-correct="true"] h3 {
+    color: #aaf4d5;
+}
+
+.answer-feedback[data-correct="false"] {
+    border-color: rgba(255, 112, 112, .28);
+    background: rgba(180, 45, 65, .1);
+    color: #ffbdc5;
+}
+
+.answer-feedback[data-correct="false"] h3 {
+    color: #ffbdc5;
+}
+
+.answer-feedback h3 {
+    margin: 0;
+    font-family: Orbitron, sans-serif;
+    font-size: .78rem;
+}
+
+.answer-feedback p {
+    font-size: .7rem;
+}
+
+.answer-feedback .explanation {
+    padding-top: 10px;
+    border-top: 1px solid rgba(117, 237, 192, .16);
+}
+
+.answer-feedback .reference-panel {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid rgba(117, 237, 192, .16);
+}
+
+.answer-feedback .reference-panel h4 {
+    color: #bdebd9;
+    font-size: .7rem;
+}
+
+.answer-feedback .reference-panel pre {
+    border-color: rgba(117, 237, 192, .14);
+    background: rgba(6, 8, 22, .72);
+    color: #aaf4d5;
+    font-size: .7rem;
+}
+
+.answer-feedback .sample-table {
+    min-width: 100%;
+}
+
+.practice-exercise .question-actions {
+    margin-top: 12px;
+}
+
+@media (max-width: 620px) {
+    .practice-topbar .game-header-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}

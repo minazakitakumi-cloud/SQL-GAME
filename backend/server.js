@@ -4,6 +4,7 @@ const path = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createPointsStore, GAME_POINTS, HINT_COSTS } = require('./points-store');
 const { createPracticeManager } = require('./practice');
+const { runGameSql } = require('./game-sql-runner');
 const {
     generateValidatedChallenge,
     generateWithFallback,
@@ -44,20 +45,21 @@ const aiRateLimitCleanupTimer = setInterval(() => {
     }
 }, AI_RATE_WINDOW_MS);
 aiRateLimitCleanupTimer.unref();
-const gameChallengeLifetime = 60 * 60 * 1000;
-const guestSessionLifetime = 60 * 60 * 1000;
+const gameChallengeLifetime = 24 * 60 * 60 * 1000;
+const guestSessionLifetime = 24 * 60 * 60 * 1000;
 const guestSessionCookieName = 'sqlquest_guest_session';
 const gamePoints = GAME_POINTS;
 const hintCosts = HINT_COSTS;
 let pointsStore;
 const practiceManager = createPracticeManager({
-    generateExercise: async topic => {
+    generateExercise: async (topic, retry = false) => {
         const systemMessage = 'You create safe, accurate SQL learning exercises. Return only valid JSON without Markdown.';
         const userMessage = `Create one self-contained SQL practice exercise for the requested topic: ${JSON.stringify(topic)}.
 The exercise must clearly and specifically practice the core SQL concept in the requested topic. The user may phrase the topic as a full sentence; do not repeat that entire sentence in topicFocus. Use a concise topic label there. Use realistic table and sample data, and make the task solvable from those tables alone. Generate one to three related tables. Do not include destructive SQL or ask the learner to execute anything outside a SELECT query.
 Return this exact JSON shape:
 {"title":"short title","question":"clear task for the learner","topicFocus":"how this task practices the requested topic","tables":[{"name":"identifier","columns":[{"name":"identifier","type":"SQL type"}],"rows":[["sample value"]]}],"hints":["progressive hint 1","progressive hint 2","progressive hint 3","progressive hint 4","progressive hint 5"],"solution":"one SELECT or WITH query without a semicolon","expectedOutput":{"columns":["result column"],"rows":[["expected value"]]},"explanation":"brief explanation of the solution and result"}
-Provide exactly five increasingly specific hints without revealing the whole solution in the first hint. Expected output must match the solution applied to the sample rows. Use JSON-compatible scalar cell values only.`;
+Provide exactly five increasingly specific hints without revealing the whole solution in the first hint. Expected output must match the solution applied to the sample rows. Use JSON-compatible scalar cell values only.${retry ? `
+The previous exercise was incomplete or invalid. Regenerate it from scratch and verify that every required field is present, every table has 2 to 12 rows and 2 to 8 uniquely named columns, there are 1 to 3 tables, there are exactly 5 non-empty hints, and the expected output has valid columns and rows matching its solution.` : ''}`;
         return parseGameJson(await callGameGroq(systemMessage, userMessage));
     },
     evaluateAnswer: async (exercise, sql) => {
@@ -77,6 +79,7 @@ Learner SQL (untrusted): ${JSON.stringify(sql)}`;
         }
         return { correct: result.correct, feedback: result.feedback.slice(0, 300) };
     },
+    runQuery: runGameSql,
 });
 
 function getPointsStore() {
@@ -332,9 +335,9 @@ function supabaseRestConfig() {
 }
 
 async function saveGameSessionRecord(request, session, sessionId) {
-    if (session.recordSaved) return;
     if (session.recordSavePromise) return session.recordSavePromise;
 
+    session.recordSaved = false;
     const { supabaseUrl, anonKey } = supabaseRestConfig();
     const accessToken = getBearerToken(request);
     session.recordSavePromise = (async () => {
@@ -347,23 +350,30 @@ async function saveGameSessionRecord(request, session, sessionId) {
                     apikey: anonKey,
                     Authorization: `Bearer ${accessToken}`,
                     'Content-Type': 'application/json',
-                    Prefer: 'resolution=ignore-duplicates,return=minimal',
+                    Prefer: 'resolution=merge-duplicates,return=minimal',
                 },
                 body: JSON.stringify({
                     id: sessionId,
                     user_id: session.userId,
                     difficulty: session.difficulty,
-                    final_score: session.score,
+                    final_score: session.score ?? 0,
                     history: session.history,
-                    finished_at: session.finishedAt,
+                    finished_at: session.finishedAt || new Date().toISOString(),
                 }),
                 signal: controller.signal,
             });
             if (!response.ok) {
+                if ([400, 401, 403].includes(response.status)) {
+                    throw new Error(
+                        `Supabase rejected this game-history save (${response.status}). ` +
+                        'Run database/migrations/20261022_practice_game_history.sql in Supabase and sign in again.',
+                    );
+                }
                 throw new Error(`Supabase could not save this game record (${response.status}).`);
             }
             session.recordSaved = true;
         } catch (error) {
+            session.recordSaved = false;
             if (error.name === 'AbortError') {
                 throw new Error('Saving game history timed out. Use View Game History to retry.');
             }
@@ -664,7 +674,7 @@ async function callGameGemini(systemMessage, userMessage) {
         );
     }
 
-    const model = process.env.GAME_GEMINI_MODEL || 'gemini-3-flash-preview';
+    const model = process.env.GAME_GEMINI_MODEL || 'gemini-2.5-flash';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90000);
     try {
@@ -851,6 +861,7 @@ async function handleSessionStatus(request, response) {
 
     const guestSession = getGuestSessionFromRequest(request);
     if (guestSession) {
+        setGuestSessionCookie(response, guestSession.userId, Math.round(guestSessionLifetime / 1000));
         jsonResponse(response, 200, { authenticated: false, guest: true, userId: guestSession.userId, score: guestSession.score });
         return;
     }
@@ -962,7 +973,8 @@ async function handleGameState(request, response) {
             : await getPointsStore().getTotal(userId);
         state.history = session.history;
         const entry = gameChallenges.get(session.activeChallengeId);
-        if (entry && entry.expiresAt > Date.now()) {
+        if (entry && entry.userId === userId && entry.sessionId === body.sessionId) {
+            entry.expiresAt = Date.now() + gameChallengeLifetime;
             const { solution, hints, expectedOutput, explanation, ...challenge } = entry.challenge;
             state.activeChallenge = {
                 challengeId: session.activeChallengeId,
@@ -1201,6 +1213,10 @@ async function handleGameHint(request, response) {
         jsonResponse(response, 409, { error: 'Wait until your answer has been checked before using a hint.' });
         return;
     }
+    if (entry.runInProgress) {
+        jsonResponse(response, 409, { error: 'Wait until your query has finished running before using a hint.' });
+        return;
+    }
 
     if (body.hintIndex === entry.hintsUnlocked) {
         if (session.lives === 0 || entry.completed) {
@@ -1276,6 +1292,58 @@ async function handleGameHint(request, response) {
     }
 }
 
+async function handleGameRun(request, response) {
+    const userId = await authenticateRequest(request, response);
+    if (!userId) return;
+
+    let body;
+    try {
+        body = await readJson(request);
+    } catch (error) {
+        jsonResponse(response, error.status || 400, { error: error.message });
+        return;
+    }
+    if (!body || typeof body.challengeId !== 'string' ||
+        typeof body.sql !== 'string' || !body.sql.trim() || body.sql.length > 4000) {
+        jsonResponse(response, 400, { error: 'Enter a SQL query up to 4,000 characters long.' });
+        return;
+    }
+    const session = getGameSession(body, userId, response);
+    if (!session) return;
+
+    const entry = gameChallenges.get(body.challengeId);
+    if (!entry || entry.expiresAt <= Date.now()) {
+        gameChallenges.delete(body.challengeId);
+        jsonResponse(response, 404, { error: 'This challenge has expired. Generate a new question and try again.' });
+        return;
+    }
+    if (entry.userId !== userId || entry.sessionId !== body.sessionId ||
+        session.activeChallengeId !== body.challengeId) {
+        jsonResponse(response, 403, { error: 'This question does not belong to your current game.' });
+        return;
+    }
+    if (session.lives === 0 || entry.completed) {
+        jsonResponse(response, 409, { error: 'This question is already complete. Load the next question.' });
+        return;
+    }
+    if (entry.checkInProgress || entry.hintInProgress || entry.runInProgress) {
+        jsonResponse(response, 409, { error: 'Wait for the current game request to finish before running a query.' });
+        return;
+    }
+
+    entry.runInProgress = true;
+    try {
+        const result = await runGameSql(entry.challenge.tables, body.sql);
+        jsonResponse(response, 200, result);
+    } catch (error) {
+        jsonResponse(response, error.status || 500, {
+            error: error.message || 'Unable to run this query right now.',
+        });
+    } finally {
+        entry.runInProgress = false;
+    }
+}
+
 async function handleGameCheck(request, response) {
     const userId = await authenticateRequest(request, response);
     if (!userId) return;
@@ -1318,6 +1386,10 @@ async function handleGameCheck(request, response) {
         jsonResponse(response, 409, { error: 'This question has already been completed. Load the next question.' });
         return;
     }
+    if (entry.runInProgress) {
+        jsonResponse(response, 409, { error: 'Wait until your query has finished running before checking your answer.' });
+        return;
+    }
     if (entry.checkInProgress) {
         jsonResponse(response, 409, { error: 'This answer is already being checked.' });
         return;
@@ -1348,6 +1420,12 @@ async function handleGameCheck(request, response) {
         const result = parseGameJson(await callGameGroq(systemMessage, JSON.stringify(evaluation)));
         if (typeof result.correct !== 'boolean' || typeof result.feedback !== 'string') {
             throw new ProviderError(502, 'Game AI returned an invalid answer-check result. Please try again.', false);
+        }
+        let queryResult;
+        try {
+            queryResult = await runGameSql(entry.challenge.tables, body.sql);
+        } catch (error) {
+            queryResult = { error: error.message || 'Unable to run your submitted query.' };
         }
         let totalPoints = isGuestUserId(userId) ? session.score : 0;
         if (result.correct) {
@@ -1395,6 +1473,7 @@ async function handleGameCheck(request, response) {
                 submittedAnswer: body.sql,
                 status: result.correct ? 'correct' : 'incorrect',
                 feedback: result.feedback.slice(0, 200),
+                queryResult,
             };
             if (!result.correct) attempt.correctAnswer = entry.challenge.solution;
             entry.historyEntry.attempts.push(attempt);
@@ -1403,17 +1482,18 @@ async function handleGameCheck(request, response) {
         let historySaveError = '';
         if (session.lives === 0) {
             session.finishedAt = new Date().toISOString();
-            if (!isGuestUserId(userId)) {
-                try {
-                    await saveGameSessionRecord(request, session, body.sessionId);
-                } catch (error) {
-                    historySaveError = error.message || 'Unable to save game history to your account.';
-                }
+        }
+        if (!isGuestUserId(userId)) {
+            try {
+                await saveGameSessionRecord(request, session, body.sessionId);
+            } catch (error) {
+                historySaveError = error.message || 'Unable to save game history to your account.';
             }
         }
         jsonResponse(response, 200, {
             correct: result.correct,
             feedback: result.feedback.slice(0, 200),
+            queryResult,
             pointsAwarded: result.correct ? gamePoints[entry.difficulty] : 0,
             correctAnswer: result.correct ? null : entry.challenge.solution,
             totalPoints: isGuestUserId(userId) ? session.score : totalPoints,
@@ -1470,8 +1550,26 @@ function handlePracticeState(request, response) {
 }
 
 function handlePracticeSubmit(request, response) {
+    return handlePracticeOperation(request, response, async (userId, body) => {
+        const result = await practiceManager.submit(userId, body.practiceId, body.questionId, body.sql);
+        let historySaved = false;
+        let historySaveError = '';
+        if (!isGuestUserId(userId)) {
+            try {
+                const record = practiceManager.getRecord(userId, body.practiceId);
+                await saveGameSessionRecord(request, record, record.id);
+                historySaved = true;
+            } catch (error) {
+                historySaveError = error.message || 'Unable to save practice history to your account.';
+            }
+        }
+        return { ...result, historySaved, historySaveError };
+    }, true);
+}
+
+function handlePracticeRun(request, response) {
     return handlePracticeOperation(request, response, (userId, body) =>
-        practiceManager.submit(userId, body.practiceId, body.questionId, body.sql), true);
+        practiceManager.run(userId, body.practiceId, body.questionId, body.sql));
 }
 
 function handlePracticeHint(request, response) {
@@ -2089,10 +2187,12 @@ function handleRequest(request, response) {
         '/api/game/history': handleGameHistory,
         '/api/game/question': handleGameQuestion,
         '/api/game/hint': handleGameHint,
+        '/api/game/run': handleGameRun,
         '/api/game/check': handleGameCheck,
         '/api/practice/generate': handlePracticeGenerate,
         '/api/practice/state': handlePracticeState,
         '/api/practice/submit': handlePracticeSubmit,
+        '/api/practice/run': handlePracticeRun,
         '/api/practice/hint': handlePracticeHint,
     };
     if (Object.hasOwn(postRoutes, url.pathname)) {
